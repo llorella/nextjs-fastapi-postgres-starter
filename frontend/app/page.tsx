@@ -1,21 +1,27 @@
-import Image from "next/image";
-
-type User = {
-  id: string;
-  name: string;
-};
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+import { fetchCurrentUser, fetchMessages, Message, User } from '../lib/api';
+import ChatWindow from '../components/ChatWindow';
 
 export default async function Home() {
-  console.log("fetch", `${apiUrl}/users/me`);
-  const user: User = await fetch(`${apiUrl}/users/me`).then((res) =>
-    res.json()
-  );
+  let user: User = { id: 0, name: 'Guest' };
+  let messages: Message[] = [];
+  
+  try {
+    // fetch user and messages in parallel
+    const [userResponse, messagesResponse] = await Promise.all([
+      fetchCurrentUser(),
+      fetchMessages()
+    ]);
+    
+    user = userResponse;
+    messages = messagesResponse;
+  } catch (error) {
+    console.error('Error fetching data:', error);
+  }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      Hello, {user.name}!
+    <main className="flex min-h-screen flex-col items-center p-4 md:p-8">
+      <h1 className="text-2xl font-bold mb-6">Real-Time Chatbot</h1>
+      <ChatWindow initialMessages={messages} userName={user.name} />
     </main>
   );
 }

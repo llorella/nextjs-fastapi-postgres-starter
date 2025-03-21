@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select, desc
 from seed import seed_user_if_needed
@@ -18,6 +19,14 @@ from dataclasses import dataclass
 seed_user_if_needed()
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class UserRead(BaseModel):
@@ -134,27 +143,51 @@ message_processor = MessageProcessor()
 async def startup_event():
     create_task(message_processor.process_messages())
 
+# implement trivial login with the name as the only parameter to demonstrate multiple concurrent users
+class LoginRequest(BaseModel):
+    name: str
 
-@app.get("/users/me")
-async def get_my_user():
+@app.post("/users/login")
+async def login(request: LoginRequest):
+    name = request.name
     async with AsyncSession(engine) as session:
-        async with session.begin():
-            # simple solution for getting the current user (n=1 user)
-            result = await session.execute(select(User))
-            user = result.scalars().first()
+        # find or create user
+        result = await session.execute(
+            select(User).where(User.name == name)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            user = User(name=name)
+            session.add(user)
+            await session.commit()
+            # fetch the user ID after commit
+            user_id = user.id
+            return {"id": user_id, "name": name}
+        else:
+            return {"id": user.id, "name": user.name}
 
-            if user is None:
-                raise HTTPException(status_code=404, detail="User not found")
-            return UserRead(id=user.id, name=user.name)
+@app.get("/users/{user_id}")
+async def get_user(user_id: int):
+    async with AsyncSession(engine) as session:
+        result = await session.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"id": user.id, "name": user.name}
 
 
 @app.get("/messages", response_model=List[MessageRead])
 async def get_messages(
+    user_id: int = Query(...), 
     before_id: Optional[int] = None,
     limit: int = Query(default=50, le=100)
 ):
     async with AsyncSession(engine) as session:
-        query = select(Message).filter_by(user_id=1)
+        query = select(Message).filter_by(user_id=user_id)
         
         if before_id:
             query = query.filter(Message.id < before_id)
@@ -166,12 +199,19 @@ async def get_messages(
         return list(reversed(messages))
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, user_id: int = 1):
-    # use default user_id for demo purposes, or if we want to allow more users for demo
-    
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: int):
     if not await manager.connect(websocket, user_id):
         return
+    
+    async with AsyncSession(engine) as session:
+        result = await session.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            await websocket.close(code=1008)
+            return
     
     try:
         while True:

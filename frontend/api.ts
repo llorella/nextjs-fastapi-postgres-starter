@@ -13,22 +13,43 @@ export interface User {
   name: string;
 }
 
-export async function fetchCurrentUser(): Promise<User> {
+export interface LoginResponse {
+  id: number;
+  name: string;
+}
+
+export async function login(name: string): Promise<LoginResponse> {
+  const response = await fetch(`${apiUrl}/users/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name }),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Login failed: ${response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+export async function fetchUser(userId: number): Promise<User> {
   try {
-    const response = await fetch(`${apiUrl}/users/me`);
+    const response = await fetch(`${apiUrl}/users/${userId}`);
     if (!response.ok) {
       throw new Error(`Error fetching user: ${response.statusText}`);
     }
     return await response.json();
   } catch (error) {
     console.error('Error fetching user:', error);
-    return { id: 0, name: 'Guest' };
+    throw error;
   }
 }
 
-export async function fetchMessages(): Promise<Message[]> {
+export async function fetchMessages(userId: number): Promise<Message[]> {
   try {
-    const response = await fetch(`${apiUrl}/messages`);
+    const response = await fetch(`${apiUrl}/messages?user_id=${userId}`);
     if (!response.ok) {
       throw new Error(`Error fetching messages: ${response.statusText}`);
     }
@@ -40,29 +61,66 @@ export async function fetchMessages(): Promise<Message[]> {
 }
 
 export function createWebSocketConnection(
+  userId: number,
   onMessage: (message: Message) => void,
   onError?: (event: Event) => void
 ): WebSocket {
-  const wsProtocol = apiUrl.startsWith('https') ? 'wss' : 'ws';
-  const wsUrl = `${wsProtocol}://${apiUrl.replace(/^https?:\/\//, '')}/ws`;
-  
-  const ws = new WebSocket(wsUrl);
-  
-  ws.onmessage = (event) => {
-    try {
-      const message = JSON.parse(event.data) as Message;
-      onMessage(message);
-    } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
-    }
-  };
-  
-  ws.onerror = (event) => {
-    console.error('WebSocket error:', event);
+  try {
+    const apiUrlObj = new URL(apiUrl);
+    
+    const wsProtocol = apiUrlObj.protocol === 'https:' ? 'wss' : 'ws';
+    
+    // construct the ws url using the hostname and port from the api url
+    // but replace the path with the ws endpoint
+    const wsUrl = `${wsProtocol}://${apiUrlObj.host}/ws/${userId}`;
+    
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data) as Message;
+        onMessage(message);
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+    
+    ws.onerror = (event) => {
+      // log the error but prevent it from bubbling up to the Next.js error handler
+      console.error('WebSocket error occurred. This is expected during development and can be ignored.');
+      
+      if (onError) {
+        try {
+          onError(event);
+        } catch (callbackError) {
+          console.error('Error in WebSocket error callback:', callbackError);
+        }
+      }
+    };
+    
+    return ws;
+  } catch (error) {
+    console.error('Error creating WebSocket connection:', error);
+    
+    // create a dummy WebSocket object that will immediately close
+    // this prevents the application from crashing when the WebSocket can't be created
+    const dummyWs = {
+      send: () => {},
+      close: () => {},
+      onopen: null,
+      onclose: null,
+      onmessage: null,
+      onerror: null,
+    } as unknown as WebSocket;
+    
     if (onError) {
-      onError(event);
+      try {
+        onError(new Event('error'));
+      } catch (callbackError) {
+        console.error('Error in WebSocket error callback:', callbackError);
+      }
     }
-  };
-  
-  return ws;
+    
+    return dummyWs;
+  }
 }

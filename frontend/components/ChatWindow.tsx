@@ -7,9 +7,10 @@ import { Message, createWebSocketConnection } from '../api';
 interface ChatWindowProps {
   initialMessages: Message[];
   userName: string;
+  userId: number; 
 }
 
-export default function ChatWindow({ initialMessages, userName }: ChatWindowProps) {
+export default function ChatWindow({ initialMessages, userName, userId }: ChatWindowProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
@@ -25,26 +26,93 @@ export default function ChatWindow({ initialMessages, userName }: ChatWindowProp
   }, [messages]);
 
   useEffect(() => {
-    const ws = createWebSocketConnection((message) => {
-      setMessages((prevMessages) => [...prevMessages, message]);
-    });
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+    const RECONNECT_DELAY = 3000; 
+    
+    const connectWebSocket = () => {
+      // only create WebSocket connection if userId is valid
+      if (!userId) return;
+      
+      try {
+        // clear any existing connection
+        if (wsRef.current) {
+          wsRef.current.onopen = null;
+          wsRef.current.onclose = null;
+          wsRef.current.onerror = null;
+          wsRef.current.onmessage = null;
+          wsRef.current.close();
+          wsRef.current = null;
+        }
+        
+        ws = createWebSocketConnection(
+          userId,
+          (message) => {
+            try {
+              setMessages((prevMessages) => [...prevMessages, message]);
+            } catch (err) {
+              console.error('Error updating messages state:', err);
+            }
+          },
+          (error) => {
+            // this error is already logged in the createWebSocketConnection function
+            // just update the connection state
+            setIsConnected(false);
+          }
+        );
 
-    ws.onopen = () => {
-      setIsConnected(true);
-      console.log('WebSocket connected');
+        ws.onopen = () => {
+          setIsConnected(true);
+          console.log('WebSocket connected');
+          reconnectAttempts = 0; // reset reconnect attempts on successful connection
+        };
+
+        ws.onclose = (event) => {
+          setIsConnected(false);
+          console.log('WebSocket disconnected', event.code, event.reason);
+          
+          // only attempt to reconnect if this wasn't a clean close and we haven't exceeded max attempts
+          if (!event.wasClean && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            console.log(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+            
+            if (reconnectTimeout) {
+              clearTimeout(reconnectTimeout);
+            }
+            
+            reconnectTimeout = setTimeout(() => {
+              connectWebSocket();
+            }, RECONNECT_DELAY);
+          }
+        };
+
+        wsRef.current = ws;
+      } catch (error) {
+        console.error('Error creating WebSocket connection:', error);
+        setIsConnected(false);
+      }
     };
-
-    ws.onclose = () => {
-      setIsConnected(false);
-      console.log('WebSocket disconnected');
-    };
-
-    wsRef.current = ws;
+    
+    connectWebSocket();
 
     return () => {
-      ws.close();
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      
+      if (wsRef.current) {
+        // remove all event handlers to prevent memory leaks
+        wsRef.current.onopen = null;
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, []);
+  }, [userId]); 
 
   const sendMessage = () => {
     if (input.trim() && wsRef.current && isConnected) {

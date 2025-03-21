@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
-import { Message, createWebSocketConnection } from '../lib/api';
+import { Message, createWebSocketConnection } from '../api';
 
 interface ChatWindowProps {
   initialMessages: Message[];

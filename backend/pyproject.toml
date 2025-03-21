@@ -13,6 +13,8 @@ asyncpg = "*"
 greenlet = "*"
 psycopg2 = "*"
 uvicorn = "*"
+websockets = "*"
+python-dotenv = "*"
 
 
 [build-system]

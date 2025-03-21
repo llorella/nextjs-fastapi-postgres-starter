@@ -1,4 +1,4 @@
-import { fetchCurrentUser, fetchMessages, Message, User } from '../lib/api';
+import { fetchCurrentUser, fetchMessages, Message, User } from '../api';
 import ChatWindow from '../components/ChatWindow';
 
 export default async function Home() {

@@ -14,6 +14,7 @@ export default function ChatWindow({ initialMessages, userName, userId }: ChatWi
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(true); // Track initial connection attempt
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -65,12 +66,14 @@ export default function ChatWindow({ initialMessages, userName, userId }: ChatWi
 
         ws.onopen = () => {
           setIsConnected(true);
+          setIsConnecting(false); // Connection attempt complete
           console.log('WebSocket connected');
           reconnectAttempts = 0; // reset reconnect attempts on successful connection
         };
 
         ws.onclose = (event) => {
           setIsConnected(false);
+          setIsConnecting(false);
           console.log('WebSocket disconnected', event.code, event.reason);
           
           // only attempt to reconnect if this wasn't a clean close and we haven't exceeded max attempts
@@ -202,7 +205,7 @@ export default function ChatWindow({ initialMessages, userName, userId }: ChatWi
             Send
           </button>
         </div>
-        {!isConnected && (
+        {!isConnected && !isConnecting && (
           <div className="text-red-500 text-xs mt-2">
             Disconnected from server. Please refresh the page.
           </div>

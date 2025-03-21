@@ -35,7 +35,7 @@ export default function Login() {
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-xl shadow-lg">
         <div>
           <h2 className="text-center text-3xl font-extrabold text-gray-900">
-            Enter Chat
+            Log in to Chat
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Enter your name to start chatting

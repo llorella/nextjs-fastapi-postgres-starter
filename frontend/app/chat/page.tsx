@@ -63,7 +63,7 @@ export default function ChatPage() {
         <h1 className="text-2xl font-bold">Real-Time Chatbot</h1>
         <button
           onClick={handleLogout}
-          className="px-4 py-2 text-sm bg-gray-200 hover:bg-gray-300 rounded-md"
+          className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-md shadow-sm transition-colors"
         >
           Logout
         </button>
